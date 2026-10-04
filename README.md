@@ -56,6 +56,14 @@ php artisan serve
 ```
 Fungua browser yako na nenda: `http://localhost:8000`
 
+### 6. Ingia Kwenye Mfumo (Super Admin)
+Baada ya mfumo kuwaka, unaweza kuingia kama Super Admin (Msimamizi Mkuu) ukitumia taarifa hizi ambazo zimetengenezwa na `DatabaseSeeder`:
+
+* **Barua Pepe (Email):** `admin@profitix.com`
+* **Nenosiri (Password):** `admin123`
+
+*(Muhimu: Tafadhali badilisha nenosiri hili mara tu utakapoingia kwa mara ya kwanza kwa usalama wako).*
+
 ---
 
 ## 🕒 Jinsi Mfumo wa ZKTeco (Mahudhurio) Unavyofanya Kazi
