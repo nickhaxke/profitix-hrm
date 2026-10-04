@@ -1,58 +1,86 @@
-a<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# Profitix HRM
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+Profitix HRM ni mfumo wa kisasa wa Usimamizi wa Rasilimali Watu (Human Resource Management) uliojengwa kwa **Laravel**. Mfumo huu una uwezo mkubwa wa kusimamia wafanyakazi, mahudhurio (Attendance), na umeunganishwa moja kwa moja (Integrated) na mashine za mahudhurio za **ZKTeco (ADMS)** kama vile SenseFace.
 
-## About Laravel
+---
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+## ⚠️ Kwanini Folder la `vendor` halipo GitHub? Je, utafanya kazi?
+Ndiyo, Mfumo utafanya kazi! Ni **Kawaida na Sahihi kabisa** kwa folder la `vendor` kutokuwepo kwenye GitHub. 
+Kwenye mifumo yote ya Laravel (na PHP kwa ujumla), folder hili halipandishwi mtandaoni (lipo kwenye `.gitignore`) kwa sababu linabeba files nyingi sana za *Dependencies* (vifurushi).
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
-
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
-
-## Learning Laravel
-
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework.
-
-In addition, [Laracasts](https://laracasts.com) contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
-
-You can also watch bite-sized lessons with real-world projects on [Laravel Learn](https://laravel.com/learn), where you will be guided through building a Laravel application from scratch while learning PHP fundamentals.
-
-## Agentic Development
-
-Laravel's predictable structure and conventions make it ideal for AI coding agents like Claude Code, Cursor, and GitHub Copilot. Install [Laravel Boost](https://laravel.com/docs/ai) to supercharge your AI workflow:
-
+**Jinsi inavyofanya kazi:**
+Utakaposhusha (Clone) huu mfumo kwenye kompyuta mpya au Server nyingine, hutapata folder la `vendor`. Ili mfumo ufanye kazi, uta-run command moja tu:
 ```bash
-composer require laravel/boost --dev
+composer install
+```
+Command hii itashusha upya mafaili yote ya `vendor` kulingana na faili lako la `composer.json` na mfumo utafanya kazi asilimia 100%. Hii inafanya GitHub yako iwe nyepesi na safi sana.
 
-php artisan boost:install
+---
+
+## 🚀 Jinsi ya Ku-Install na Kuendesha Mfumo (Local Setup)
+
+Ili kuwasha huu mfumo kwenye kompyuta mpya, fuata hatua hizi kwa umakini:
+
+### 1. Shusha Mfumo (Clone)
+```bash
+git clone https://github.com/nickhaxke/profitix-hrm.git
+cd profitix-hrm
 ```
 
-Boost provides your agent 15+ tools and skills that help agents build Laravel applications while following best practices.
+### 2. Install Dependencies (Kutengeneza folder la vendor)
+```bash
+composer install
+npm install
+npm run build
+```
 
-## Contributing
+### 3. Copy Faili la Environment (.env)
+Tengeneza faili la `.env` kwa kucopy kutoka `.env.example`:
+```bash
+cp .env.example .env
+```
+Kisha tengeneza Application Key:
+```bash
+php artisan key:generate
+```
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+### 4. Database Setup
+Ingia kwenye faili la `.env` na uweke jina la Database yako, Username, na Password. Baada ya hapo, weka Database (Migrations) kwa ku-run:
+```bash
+php artisan migrate --seed
+```
 
-## Code of Conduct
+### 5. Washa Mfumo
+```bash
+php artisan serve
+```
+Fungua browser yako na nenda: `http://localhost:8000`
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+---
 
-## Security Vulnerabilities
+## 🕒 Jinsi Mfumo wa ZKTeco (Mahudhurio) Unavyofanya Kazi
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+Mfumo huu umetengenezwa kuwa **Smart** kupokea data kutoka kwenye mashine za ZKTeco zenye ADMS bila kumtegemea mfanyakazi kubonyeza kitufe cha In/Out kwenye mashine.
 
-## License
+* **URL ya Mashine (Server URL kwenye ZKTeco):** `http://domain-yako.com`
+* **Server Port:** `80` au `443`
+* **Jinsi Maamuzi ya In/Out Yanavyofanyika (Attendance Processor):**
+  1. **Punch ya Kwanza ya Siku:** Inasomeka kama `CHECK-IN`.
+  2. **Punches za Katikati ya Siku:** Zinawekwa `Ignored` (Ili kuzuia mtu kutoka kabla ya muda au kurudia rudia kuscan kwa makosa).
+  3. **Punch Baada ya Muda wa Kutoka:** Inasomeka kama `CHECK-OUT`.
+  4. **Muda Mkuu wa Kutoka (Earliest Checkout Time):** Unasomwa kutoka kwenye "Shift" aliyopewa mtu. Kama hana Shift, mfumo unatumia "Fallback Time" ambayo ni saa **10:00 Jioni (16:00)**.
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+---
+
+## 📚 Makumbusho Muhimu (Cheatsheet)
+* **Kusafisha Cache ikigoma:** `php artisan optimize:clear`
+* **Kutengeneza Controller:** `php artisan make:controller JinaController`
+* **Ku-Update Code kutoka GitHub (Kama upo kwenye Server / cPanel terminal):**
+  ```bash
+  git pull origin main
+  composer install
+  php artisan migrate
+  ```
+
+---
+*Umetengenezwa na: Nick*
