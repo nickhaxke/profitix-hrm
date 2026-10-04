@@ -1,0 +1,311 @@
+<?php
+
+namespace App\Services;
+
+use App\Models\AttendanceLog;
+use App\Models\AttendanceSummary;
+use App\Models\Employee;
+use App\Models\Shift;
+use Carbon\Carbon;
+use Illuminate\Support\Facades\Log;
+
+class AttendanceService
+{
+    protected $stats = [
+        'total_logs' => 0,
+        'processed_employees' => 0,
+        'skipped_employees' => 0,
+        'errors' => []
+    ];
+
+    /**
+     * Process all unprocessed logs across any dates.
+     */
+    public function processUnprocessedLogs(): array
+    {
+        $dates = AttendanceLog::where('is_processed', false)
+            ->selectRaw('DATE(punch_time) as punch_date')
+            ->distinct()
+            ->pluck('punch_date');
+
+        $overallStats = [
+            'dates_processed' => count($dates),
+            'total_summaries' => 0,
+            'details' => []
+        ];
+
+        foreach ($dates as $date) {
+            $dateStats = $this->processDate($date);
+            $overallStats['total_summaries'] += $dateStats['processed_employees'];
+            $overallStats['details'][$date] = $dateStats;
+        }
+
+        return $overallStats;
+    }
+
+    /**
+     * Process raw attendance logs into daily summaries for a given date.
+     */
+    public function processDate(string $date): array
+    {
+        $this->stats = [
+            'date' => $date,
+            'total_logs' => AttendanceLog::whereDate('punch_time', $date)->count(),
+            'processed_employees' => 0,
+            'skipped_employees' => 0,
+            'errors' => []
+        ];
+
+        $employees = Employee::active()->get();
+
+        foreach ($employees as $employee) {
+            try {
+                $this->processEmployeeDate($employee, $date);
+                $this->stats['processed_employees']++;
+            } catch (\Exception $e) {
+                $this->stats['errors'][] = "Employee {$employee->full_name} (ID: {$employee->id}): " . $e->getMessage();
+                Log::error("Attendance Processing Error: " . $e->getMessage());
+            }
+        }
+
+        // Mark logs as processed for this date
+        AttendanceLog::whereDate('punch_time', $date)
+            ->where('is_processed', false)
+            ->update(['is_processed' => true]);
+
+        return $this->stats;
+    }
+
+    /**
+     * Delete existing summaries and re-process a specific date.
+     */
+    public function rebuildDate(string $date): array
+    {
+        AttendanceSummary::where('summary_date', $date)->delete();
+        AttendanceLog::whereDate('punch_time', $date)->update(['is_processed' => false]);
+        return $this->processDate($date);
+    }
+
+    /**
+     * Process a single employee's attendance for a given date.
+     */
+    public function processEmployeeDate(Employee $employee, string $date): void
+    {
+        // Clear existing summaries for this employee/date to avoid orphans if shift assignments changed
+        AttendanceSummary::where('employee_id', $employee->id)->where('summary_date', $date)->delete();
+
+        // 1. Get all assigned shifts for this employee on this date
+        $assignedShifts = $this->getEmployeeAssignedShifts($employee, $date);
+
+        // 2. Get all punches for the day + some buffer for overnight
+        $allPunches = AttendanceLog::where('employee_id', $employee->id)
+            ->whereBetween('punch_time', [
+                Carbon::parse($date)->startOfDay()->subHours(4),
+                Carbon::parse($date)->addDay()->endOfDay()
+            ])
+            ->orderBy('punch_time')
+            ->get();
+
+        // 3. LOOK BACK: Check if there's an unclosed overnight shift from yesterday
+        $this->handleLookBack($employee, $date, $allPunches);
+
+        foreach ($assignedShifts as $shift) {
+            $this->processShiftForEmployee($employee, $date, $shift, $allPunches);
+        }
+    }
+
+    /**
+     * Closes an unclosed shift from yesterday using today's first punch.
+     */
+    private function handleLookBack(Employee $employee, string $date, $allPunches)
+    {
+        $yesterday = Carbon::parse($date)->subDay()->toDateString();
+        $openSummary = AttendanceSummary::where('employee_id', $employee->id)
+            ->where('summary_date', $yesterday)
+            ->where('status', 'missing_checkout')
+            ->first();
+
+        if ($openSummary && $allPunches->isNotEmpty()) {
+            // Find the first punch of "today" (after 00:00 of $date)
+            $firstTodayPunch = $allPunches->filter(fn($p) => Carbon::parse($p->punch_time)->toDateString() === $date)->first();
+            
+            if ($firstTodayPunch) {
+                $inTime = Carbon::parse($openSummary->summary_date->format('Y-m-d') . ' ' . $openSummary->check_in_time);
+                $outTime = Carbon::parse($firstTodayPunch->punch_time);
+                
+                // Only close if it's within a reasonable window (max 16 hours from check-in)
+                $hoursDiff = $outTime->diffInHours($inTime);
+                if ($hoursDiff > 0 && $hoursDiff < 16) {
+                    $this->closePreviousShift($openSummary, $firstTodayPunch);
+                }
+            }
+        }
+    }
+
+    /**
+     * Process a specific shift for an employee on a given date.
+     */
+    private function processShiftForEmployee(Employee $employee, string $date, Shift $shift, $allPunches): ?AttendanceSummary
+    {
+        $shiftStart = Carbon::parse($date . ' ' . $shift->start_time);
+        $shiftEnd = Carbon::parse($date . ' ' . $shift->end_time);
+        
+        if ($shift->crosses_midnight) {
+            $shiftEnd->addDay();
+        }
+
+        // Define a generous window for this shift (4 hours before start, 4 hours after end)
+        $windowStart = $shiftStart->copy()->subHours(4);
+        $windowEnd = $shiftEnd->copy()->addHours(4);
+
+        $shiftPunches = $allPunches->filter(function($p) use ($windowStart, $windowEnd) {
+            $punchTime = Carbon::parse($p->punch_time);
+            return $punchTime->between($windowStart, $windowEnd);
+        });
+
+        if ($shiftPunches->isEmpty()) {
+            // No punches for this shift = Absent
+            return AttendanceSummary::updateOrCreate(
+                ['employee_id' => $employee->id, 'summary_date' => $date, 'shift_id' => $shift->id],
+                [
+                    'check_in_time' => null,
+                    'check_out_time' => null,
+                    'total_hours' => 0,
+                    'overtime_hours' => 0,
+                    'late_minutes' => 0,
+                    'status' => 'absent',
+                    'is_late' => false,
+                    'is_overnight' => $shift->crosses_midnight,
+                ]
+            );
+        }
+
+        $checkInLog = $shiftPunches->first();
+        $checkOutLog = ($shiftPunches->count() > 1) ? $shiftPunches->last() : null;
+
+        $checkInTime = Carbon::parse($checkInLog->punch_time);
+        $checkOutTime = $checkOutLog ? Carbon::parse($checkOutLog->punch_time) : null;
+
+        $totalHours = 0;
+        if ($checkInTime && $checkOutTime) {
+            $totalHours = round($checkInTime->diffInMinutes($checkOutTime) / 60, 2);
+        }
+
+        // Calculate late minutes
+        $lateMinutes = 0;
+        $isLate = false;
+        $graceEnd = $shiftStart->copy()->addMinutes($shift->grace_minutes);
+        
+        if ($checkInTime->gt($graceEnd)) {
+            $lateMinutes = (int) $graceEnd->diffInMinutes($checkInTime);
+            $isLate = true;
+        }
+
+        // Determine status
+        $status = 'present';
+        if (!$checkOutTime) {
+            $status = 'missing_checkout';
+        } elseif ($totalHours < ($shift->half_day_hours ?? 4)) {
+            $status = 'half_day';
+        } elseif ($isLate) {
+            $status = 'late';
+        }
+
+        $isOvernight = ($checkInTime && $checkOutTime && $checkInTime->format('Y-m-d') !== $checkOutTime->format('Y-m-d'));
+        $overtimeHours = $this->calculateOvertime($shift, $totalHours);
+
+        return AttendanceSummary::updateOrCreate(
+            ['employee_id' => $employee->id, 'summary_date' => $date, 'shift_id' => $shift->id],
+            [
+                'check_in_time' => $checkInTime->format('H:i:s'),
+                'check_out_time' => $checkOutTime ? $checkOutTime->format('H:i:s') : null,
+                'total_hours' => $totalHours,
+                'overtime_hours' => $overtimeHours,
+                'late_minutes' => $lateMinutes,
+                'status' => $status,
+                'is_late' => $isLate,
+                'is_overnight' => $isOvernight || $shift->crosses_midnight,
+            ]
+        );
+    }
+
+    private function getEmployeeAssignedShifts(Employee $employee, string $date)
+    {
+        $assignedShifts = $employee->shifts()
+            ->wherePivot('effective_from', '<=', $date)
+            ->where(function ($q) use ($date) {
+                $q->whereNull('employee_shifts.effective_to')
+                  ->orWhere('employee_shifts.effective_to', '>=', $date);
+            })
+            ->get();
+
+        if ($assignedShifts->isEmpty()) {
+            return collect([$this->getDefaultShift()]);
+        }
+
+        return $assignedShifts;
+    }
+
+    private function getDefaultShift(): Shift
+    {
+        return Shift::where('is_default', true)->first() ?? Shift::firstOrCreate(
+            ['is_default' => true],
+            [
+                'name' => 'Standard Shift',
+                'start_time' => '08:00:00',
+                'end_time' => '17:00:00',
+                'grace_minutes' => 15,
+                'required_hours' => 8,
+                'half_day_hours' => 4,
+                'is_active' => true
+            ]
+        );
+    }
+
+
+
+
+
+    private function closePreviousShift(AttendanceSummary $summary, AttendanceLog $outPunch)
+    {
+        $inTime = Carbon::parse($summary->summary_date->format('Y-m-d') . ' ' . $summary->check_in_time);
+        $outTime = Carbon::parse($outPunch->punch_time);
+        
+        $totalHours = round($inTime->diffInMinutes($outTime) / 60, 2);
+        $overtimeHours = $this->calculateOvertime($summary->shift, $totalHours);
+
+        $summary->update([
+            'check_out_time' => $outTime->format('H:i:s'),
+            'total_hours' => $totalHours,
+            'overtime_hours' => $overtimeHours,
+            'status' => ($summary->is_late) ? 'late' : 'present',
+            'is_overnight' => true,
+        ]);
+    }
+
+    private function calculateOvertime(?Shift $shift, float $totalHours): float
+    {
+        if (!$shift || $totalHours <= 0) return 0;
+
+        $startTime = Carbon::parse($shift->start_time);
+        $endTime = Carbon::parse($shift->end_time);
+        
+        if ($shift->crosses_midnight) {
+            $endTime->addDay();
+        }
+        
+        $scheduledDuration = round($startTime->diffInMinutes($endTime) / 60, 2);
+        
+        if ($totalHours > $scheduledDuration) {
+            return round($totalHours - $scheduledDuration, 2);
+        }
+
+        return 0;
+    }
+
+    public function getStats(): array
+    {
+        return $this->stats;
+    }
+}
+

@@ -1,0 +1,16 @@
+{
+    "cloud_url": " https://hrm.craft.co.tz/bridge/sync",
+    "bridge_token": "JJS8-XV6R-YV7F",
+      "devices": [
+      {
+          "id": 1,
+          "ip": "192.168.1.15",
+          "port": 4370,
+          "name": "MAIN_DEVICE",
+          "password": 123321
+      }
+  ],
+
+    "chunk_size": 500,
+    "interval": 30
+}
