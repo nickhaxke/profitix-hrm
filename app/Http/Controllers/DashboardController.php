@@ -21,8 +21,8 @@ class DashboardController extends Controller
 
         $stats = [
             'total_employees' => Employee::active()->count(),
-            'present_today' => AttendanceSummary::where('summary_date', $today)->whereIn('status', ['present', 'late', 'missing_checkout'])->count(),
-            'absent_today' => max(0, Employee::active()->count() - AttendanceSummary::where('summary_date', $today)->whereIn('status', ['present', 'late', 'missing_checkout'])->count()),
+            'present_today' => AttendanceSummary::where('summary_date', $today)->whereIn('status', ['present', 'late', 'missing_checkout', 'half_day'])->count(),
+            'absent_today' => max(0, Employee::active()->count() - AttendanceSummary::where('summary_date', $today)->whereIn('status', ['present', 'late', 'missing_checkout', 'half_day'])->count()),
             'late_today' => AttendanceSummary::where('summary_date', $today)->where('is_late', true)->count(),
             'total_hours_today' => AttendanceSummary::where('summary_date', $today)->sum('total_hours'),
             'devices_total' => Device::where('is_active', true)->count(),
@@ -41,11 +41,11 @@ class DashboardController extends Controller
 
         $data = [];
         if ($type === 'present') {
-            $data = AttendanceSummary::with('employee')->where('summary_date', $today)->whereIn('status', ['present', 'late', 'missing_checkout'])->get()->map(function ($item) {
+            $data = AttendanceSummary::with('employee')->where('summary_date', $today)->whereIn('status', ['present', 'late', 'missing_checkout', 'half_day'])->get()->map(function ($item) {
                 return ['name' => $item->employee->full_name ?? 'Unknown', 'detail' => 'In: '.($item->check_in_time ? Carbon::parse($item->check_in_time)->format('H:i') : '-'), 'status' => 'present'];
             });
         } elseif ($type === 'absent') {
-            $presentIds = AttendanceSummary::where('summary_date', $today)->whereIn('status', ['present', 'late', 'missing_checkout'])->pluck('employee_id');
+            $presentIds = AttendanceSummary::where('summary_date', $today)->whereIn('status', ['present', 'late', 'missing_checkout', 'half_day'])->pluck('employee_id');
             $data = Employee::active()->whereNotIn('id', $presentIds)->get()->map(function ($item) {
                 return ['name' => $item->full_name, 'detail' => 'Did not punch in', 'status' => 'absent'];
             });
