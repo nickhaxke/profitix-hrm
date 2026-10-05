@@ -47,6 +47,7 @@ class AttendanceService
     {
         $unprocessedLogs = AttendanceLog::where('employee_id', $employee->id)
             ->where('is_processed', false)
+            ->where('is_ignored', false)
             ->orderBy('punch_time', 'asc')
             ->get();
 

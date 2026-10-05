@@ -169,6 +169,10 @@ class IclockController extends Controller
             }
             Log::info("ADMS Sync from {$sn}: Saved {$added} logs.");
 
+            if ($added > 0) {
+                app(\App\Services\AttendanceService::class)->processUnprocessedLogs();
+            }
+
             if ($device) {
                 $device->update([
                     'last_sync' => now(),
